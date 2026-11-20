@@ -24,6 +24,18 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="./src/main.tsx"></script>
+    <script id="app-entry" type="module" src="./src/main.tsx"></script>
+    <script>
+      (function () {
+        var entry = document.getElementById('app-entry');
+        if (
+          entry &&
+          entry.getAttribute('src') === './src/main.tsx' &&
+          location.hostname.endsWith('.github.io')
+        ) {
+          location.replace('./docs/');
+        }
+      })();
+    </script>
   </body>
 </html>
