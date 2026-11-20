@@ -5,8 +5,11 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
+  const base =
+    process.env.GITHUB_ACTIONS === 'true' ? '/Nikkah-Invitation-Card/' : './';
+
   return {
-    base: './',
+    base,
     plugins: [
       react(),
       tailwindcss(),
@@ -25,11 +28,6 @@ export default defineConfig(() => {
           const distAssets = path.resolve(distDir, 'src/assets');
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
-          }
-          const docsDir = path.resolve(__dirname, 'docs');
-          if (fs.existsSync(distDir)) {
-            fs.rmSync(docsDir, {recursive: true, force: true});
-            fs.cpSync(distDir, docsDir, {recursive: true, force: true});
           }
         },
       },
