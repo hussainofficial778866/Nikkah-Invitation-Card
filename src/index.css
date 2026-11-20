@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-serif: "Cormorant Garamond", Georgia, serif;
+    --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-arabic: "Amiri", Georgia, serif;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    font-family: var(--font-sans);
+    color: #1c2f42;
+    background-color: #e4f1f9;
+    overflow-x: hidden;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    background:
+      radial-gradient(circle at 18% 12%, rgba(162, 211, 240, 0.55) 0%, transparent 45%),
+      radial-gradient(circle at 84% 85%, rgba(240, 198, 203, 0.35) 0%, transparent 45%),
+      linear-gradient(155deg, #d6eaf7 0%, #ebf5fc 46%, #faf5ee 100%);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+.font-editorial {
+  font-family: var(--font-serif);
+}
+
+.font-arabic {
+  font-family: var(--font-arabic);
+}
+
+/* Cotton stationery subtle paper grain */
+.paper-surface {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(214, 236, 250, 0.42) 0%, transparent 58%),
+    radial-gradient(circle at 50% 100%, rgba(248, 226, 229, 0.28) 0%, transparent 52%),
+    linear-gradient(180deg, #fcfaf6 0%, #fdfbf8 55%, #f8f4ed 100%);
+}
+
+/* 3D card opening perspective */
+.card-perspective {
+  perspective: 1800px;
+}
+
+.card-hinge-cover {
+  transform-origin: left center;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+}
+
+@keyframes petalDrift {
+  0% {
+    transform: translate3d(0, -10vh, 0) rotate(0deg) scale(0.92);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.92;
+  }
+  85% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate3d(var(--drift-x, 36px), 102vh, 0) rotate(var(--drift-rot, 240deg)) scale(1.04);
+    opacity: 0;
+  }
+}
+
+.animate-petal-drift {
+  animation: petalDrift var(--drift-duration, 8s) cubic-bezier(0.25, 0.46, 0.45, 0.94) var(--drift-delay, 0s) forwards;
+}
+
+@keyframes gentleGlow {
+  0%, 100% {
+    opacity: 0.55;
+    transform: scale(0.98);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.03);
+  }
+}
+
+.animate-soft-glow {
+  animation: gentleGlow 4.5s ease-in-out infinite;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-petal-drift,
+  .animate-soft-glow {
+    animation: none !important;
+  }
+}
