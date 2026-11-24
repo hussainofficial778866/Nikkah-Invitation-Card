@@ -35,10 +35,11 @@ export default function App() {
 
     const audio = new Audio();
     audio.preload = 'auto';
+    audio.loop = true;
     audioRef.current = audio;
 
     const handleEnded = () => {
-      // Explicitly restart from 0:00 when the ~60s track ends without resetting the page
+      // Fallback restart if loop is ever bypassed by a browser
       audio.currentTime = 0;
       audio.play().catch(() => {
         // Ignore if blocked before user gesture

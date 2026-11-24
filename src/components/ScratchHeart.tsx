@@ -80,11 +80,11 @@ export const ScratchHeart: React.FC<ScratchHeartProps> = ({ onRevealed, resetSig
     ctx.fillStyle = '#183750';
     ctx.font = '600 18px "Cormorant Garamond", Georgia, serif';
     ctx.textAlign = 'center';
-    ctx.fillText('SCRATCH ME', 140, 122);
+    ctx.fillText('SAVE THE DATE', 140, 120);
 
     ctx.fillStyle = '#2B5374';
-    ctx.font = '500 11px "Plus Jakarta Sans", sans-serif';
-    ctx.fillText('Scratch to reveal the date', 140, 144);
+    ctx.font = '600 11px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('SCRATCH ME', 140, 144);
 
     ctx.restore();
     setFoilReady(true);
@@ -220,7 +220,7 @@ export const ScratchHeart: React.FC<ScratchHeartProps> = ({ onRevealed, resetSig
           } ${revealed ? 'scale-105' : 'scale-100'}`}
         >
           <p className="font-editorial text-2xl font-semibold leading-tight text-[#1A354C] sm:text-[26px]">
-            23 December 2026
+            11 December 2026
           </p>
         </div>
 

@@ -1,19 +1,38 @@
-// Pure Float32Array Stereo DSP Synthesizer — 24-Bar (~58.8s) Modern Arabic Hip-Hop Instrumental
-// Renders in ~50ms with zero OfflineAudioContext bottlenecks, zero chimes/bells, and full punch:
-// - 98 BPM Hip-Hop 808 Kick + Gliding Sub-Bass
-// - Punchy Snare + Multi-Tap Stereo Clap + Trap Hi-Hat Rolls
-// - Authentic Arabic Darbuka (Doum, Tak, Ka) Maqsoum Groove
-// - Karplus-Strong Physical-Modeled Arabic Oud in Maqam Hijaz (D - Eb - F# - G - A - Bb - C# - D)
-// - Cinematic Detuned Brass/String Swells + Warm Studio Limiter
+// Studio-Grade 32 kHz Stereo Arabic Wedding Instrumental Synthesizer
+// Composed in Maqam Hijaz Kar / Hijaz in D (D - Eb - F# - G - A - Bb - C# - D)
+// 24-Bar Luxury Bridal / Nikah Entrance Groove (~56.47s seamless circular loop):
+// - Fractional-Delay Double-Course Arabic Oud with Spruce Body Resonance & Risha Tremolos
+// - Lush Middle Eastern Firqa String Ensemble with Delayed Vibrato & Legato Glissandos
+// - Warm Qanun Ornamental Flourishes
+// - Authentic Arabic Percussion: Darbuka (Doum, Tak, Ka), Daf Frame Drum, Silky Riq Shimmer
+// - Clean Warm Modern Bass + 4-Line Hadamard FDN Concert Hall Reverb + Circular Seamless Loop
 
-const SAMPLE_RATE = 24000;
-const BPM = 98;
+const SAMPLE_RATE = 32000;
+const BPM = 102;
 const BEAT_SEC = 60 / BPM;
 const BAR_SEC = BEAT_SEC * 4;
 const TOTAL_BARS = 24;
-const DURATION_SEC = BAR_SEC * TOTAL_BARS; // ~58.7755s exact loop
+const LOOP_DURATION_SEC = BAR_SEC * TOTAL_BARS; // ~56.4706s exact seamless loop
+const TAIL_SEC = 2.6; // Reverb & sustain wraparound window for 0ms gapless looping
 
-function mixMonoIntoStereo(
+// Fast 4096-point wavetable for high-precision, ultra-fast bowed string & percussion synthesis
+const TABLE_SIZE = 4096;
+const TABLE_MASK = TABLE_SIZE - 1;
+const SIN_TABLE = new Float32Array(TABLE_SIZE);
+for (let i = 0; i < TABLE_SIZE; i++) {
+  SIN_TABLE[i] = Math.sin((i / TABLE_SIZE) * Math.PI * 2);
+}
+
+// Deterministic PRNG so the subtle humanization & plucks sound consistent & clean
+function createRng(seed = 11122026) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+function mixMono(
   outL: Float32Array,
   outR: Float32Array,
   src: Float32Array,
@@ -30,254 +49,496 @@ function mixMonoIntoStereo(
   }
 }
 
-function make808KickSample(subFreq = 46.25, durSec = 0.45): Float32Array {
-  const len = Math.floor(SAMPLE_RATE * durSec);
+// 1. AUTHENTIC ARABIC DARBUKA (DOUM, TAK, KA)
+function makeDarbukaSample(kind: 'doum' | 'tak' | 'ka', rng: () => number): Float32Array {
+  const dur = kind === 'doum' ? 0.34 : 0.14;
+  const len = Math.floor(SAMPLE_RATE * dur);
   const buf = new Float32Array(len);
-  let phase = 0;
-  let clickPhase = 0;
+
+  let ph1 = 0;
+  let ph2 = 0;
+  let ph3 = 0;
+  let lp = 0;
+  let hpPrev = 0;
+
   for (let i = 0; i < len; i++) {
     const t = i / SAMPLE_RATE;
-    const freq = subFreq + 125 * Math.exp(-t / 0.028);
-    phase += (2 * Math.PI * freq) / SAMPLE_RATE;
-    const body = Math.sin(phase) * Math.exp(-t / 0.21);
+    const attack = Math.min(1, t / 0.0022);
 
-    // Tight beater click
-    clickPhase += (2 * Math.PI * (75 + 220 * Math.exp(-t / 0.008))) / SAMPLE_RATE;
-    const click = Math.sin(clickPhase) * Math.exp(-t / 0.012) * 0.42;
+    if (kind === 'doum') {
+      const f1 = 74 + 98 * Math.exp(-t / 0.022);
+      const f2 = 148 + 120 * Math.exp(-t / 0.014);
+      ph1 += (2 * Math.PI * f1) / SAMPLE_RATE;
+      ph2 += (2 * Math.PI * f2) / SAMPLE_RATE;
 
-    const env = Math.min(1, t / 0.003);
-    buf[i] = Math.tanh((body * 1.45 + click) * 1.35) * env * 0.9;
+      const body = Math.sin(ph1) * Math.exp(-t / 0.115) * 0.85;
+      const over = Math.sin(ph2) * Math.exp(-t / 0.045) * 0.25;
+      const thump = Math.exp(-t / 0.009) * 0.18;
+
+      buf[i] = Math.tanh((body + over + thump) * 1.1) * attack * 0.68;
+    } else {
+      const isTak = kind === 'tak';
+      const f1 = (isTak ? 335 : 290) + 210 * Math.exp(-t / 0.009);
+      const f2 = (isTak ? 585 : 495) + 240 * Math.exp(-t / 0.007);
+      const f3 = isTak ? 890 : 760;
+
+      ph1 += (2 * Math.PI * f1) / SAMPLE_RATE;
+      ph2 += (2 * Math.PI * f2) / SAMPLE_RATE;
+      ph3 += (2 * Math.PI * f3) / SAMPLE_RATE;
+
+      const skin =
+        Math.sin(ph1) * Math.exp(-t / 0.032) * 0.55 +
+        Math.sin(ph2) * Math.exp(-t / 0.021) * 0.34 +
+        Math.sin(ph3) * Math.exp(-t / 0.012) * 0.18;
+
+      const n = rng() * 2 - 1;
+      lp += 0.34 * (n - lp);
+      const hp = lp - 0.78 * hpPrev;
+      hpPrev = lp;
+      const slap = hp * Math.exp(-t / (isTak ? 0.016 : 0.012)) * 0.65;
+
+      const level = isTak ? 0.44 : 0.28;
+      buf[i] = Math.tanh((skin + slap) * 1.15) * attack * level;
+    }
   }
   return buf;
 }
 
-function makeSnareClapSample(): { L: Float32Array; R: Float32Array } {
-  const len = Math.floor(SAMPLE_RATE * 0.24);
-  const L = new Float32Array(len);
-  const R = new Float32Array(len);
-  let phase = 0;
-  let lpL = 0;
-  let lpR = 0;
-  let hpPrevL = 0;
-  let hpPrevR = 0;
-  let hpOutL = 0;
-  let hpOutR = 0;
-
-  for (let i = 0; i < len; i++) {
-    const t = i / SAMPLE_RATE;
-    const bodyFreq = 128 + 95 * Math.exp(-t / 0.022);
-    phase += (2 * Math.PI * bodyFreq) / SAMPLE_RATE;
-    const body = Math.sin(phase) * Math.exp(-t / 0.055) * 0.52;
-
-    // Multi-tap stereo clap bursts at 0ms, 11ms, 22ms
-    const burstEnv =
-      (t < 0.014 ? Math.exp(-t / 0.006) * 0.55 : 0) +
-      (t >= 0.011 && t < 0.026 ? Math.exp(-(t - 0.011) / 0.006) * 0.6 : 0) +
-      (t >= 0.022 ? Math.exp(-(t - 0.022) / 0.068) * 0.95 : 0);
-
-    const nL = Math.random() * 2 - 1;
-    const nR = Math.random() * 2 - 1;
-
-    // Band-limit noise (roughly 750Hz - 4200Hz)
-    lpL += 0.48 * (nL - lpL);
-    lpR += 0.48 * (nR - lpR);
-    hpOutL = 0.82 * (hpOutL + lpL - hpPrevL);
-    hpOutR = 0.82 * (hpOutR + lpR - hpPrevR);
-    hpPrevL = lpL;
-    hpPrevR = lpR;
-
-    const snapL = hpOutL * burstEnv * 0.72;
-    const snapR = hpOutR * burstEnv * 0.72;
-    L[i] = Math.tanh((body + snapL) * 1.25) * 0.78;
-    R[i] = Math.tanh((body + snapR) * 1.25) * 0.78;
-  }
-  return { L, R };
-}
-
-function makeHiHatSample(open: boolean): Float32Array {
-  const dur = open ? 0.22 : 0.05;
+// 2. WARM CINEMATIC DAF / FRAME DRUM (REGAL PULSE)
+function makeDafFrameDrumSample(rng: () => number): Float32Array {
+  const dur = 0.48;
   const len = Math.floor(SAMPLE_RATE * dur);
   const buf = new Float32Array(len);
-  let prev = 0;
-  let prev2 = 0;
+  let ph1 = 0;
+  let ph2 = 0;
+  let lp = 0;
+
   for (let i = 0; i < len; i++) {
     const t = i / SAMPLE_RATE;
-    const noise = Math.random() * 2 - 1;
-    // Crisp high-pass metallic sheen
-    const hp1 = noise - 0.88 * prev;
-    prev = noise;
-    const hp2 = hp1 - 0.82 * prev2;
-    prev2 = hp1;
+    const attack = Math.min(1, t / 0.006);
+    const f1 = 58 + 56 * Math.exp(-t / 0.028);
+    const f2 = 128 + 65 * Math.exp(-t / 0.018);
 
-    const env = Math.exp(-t / (open ? 0.075 : 0.015)) * Math.min(1, t / 0.002);
-    buf[i] = hp2 * env * (open ? 0.22 : 0.19);
+    ph1 += (2 * Math.PI * f1) / SAMPLE_RATE;
+    ph2 += (2 * Math.PI * f2) / SAMPLE_RATE;
+
+    const head = Math.sin(ph1) * Math.exp(-t / 0.16) * 0.85;
+    const warmOver = Math.sin(ph2) * Math.exp(-t / 0.075) * 0.28;
+
+    const n = rng() * 2 - 1;
+    lp += 0.14 * (n - lp);
+    const palmBrush = lp * Math.exp(-t / 0.024) * 0.25;
+
+    buf[i] = Math.tanh((head + warmOver + palmBrush) * 1.05) * attack * 0.56;
   }
   return buf;
 }
 
-function makeDarbukaSample(kind: 'doum' | 'tak' | 'ka'): Float32Array {
-  const dur = kind === 'doum' ? 0.22 : 0.085;
+// 3. SILKY ARABIC RIQ (SOFT TAMBOURINE SHIMMER — NO HARSH BELLS)
+function makeRiqShimmerSample(accent: boolean, rng: () => number): Float32Array {
+  const dur = accent ? 0.11 : 0.065;
   const len = Math.floor(SAMPLE_RATE * dur);
   const buf = new Float32Array(len);
-  let phase = 0;
+  let hp1 = 0;
+  let hp2 = 0;
   let lp = 0;
   let prev = 0;
 
   for (let i = 0; i < len; i++) {
     const t = i / SAMPLE_RATE;
-    if (kind === 'doum') {
-      const freq = 76 + 105 * Math.exp(-t / 0.018);
-      phase += (2 * Math.PI * freq) / SAMPLE_RATE;
-      const env = Math.exp(-t / 0.078) * Math.min(1, t / 0.003);
-      buf[i] = Math.tanh(Math.sin(phase) * 1.4) * env * 0.52;
-    } else {
-      const f = kind === 'tak' ? 310 + 260 * Math.exp(-t / 0.012) : 275 + 210 * Math.exp(-t / 0.01);
-      phase += (2 * Math.PI * f) / SAMPLE_RATE;
-      const skin = Math.sin(phase) * Math.exp(-t / 0.022);
-      const n = Math.random() * 2 - 1;
-      lp += 0.42 * (n - lp);
-      const slap = (lp - 0.72 * prev) * Math.exp(-t / 0.018);
-      prev = lp;
-      const amp = kind === 'tak' ? 0.44 : 0.3;
-      buf[i] = Math.tanh((skin * 0.75 + slap * 0.9) * 1.3) * amp;
-    }
+    const n = rng() * 2 - 1;
+    lp += 0.55 * (n - lp);
+    const h1 = lp - 0.88 * prev;
+    prev = lp;
+    hp1 += 0.35 * (h1 - hp1);
+    hp2 = h1 - hp1;
+
+    const jingle =
+      (Math.sin(2 * Math.PI * 5320 * t) * 0.35 + Math.sin(2 * Math.PI * 6940 * t) * 0.25) *
+      Math.exp(-t / (accent ? 0.032 : 0.016));
+
+    const env = Math.min(1, t / 0.003) * Math.exp(-t / (accent ? 0.034 : 0.018));
+    buf[i] = (hp2 * 0.55 + jingle * 0.16) * env * (accent ? 0.14 : 0.085);
   }
   return buf;
 }
 
-function addOudPluck(
+// 4. FRACTIONAL-DELAY DOUBLE-COURSE ARABIC OUD + WOODEN BODY RESONANCE
+function addOudNote(
   outL: Float32Array,
   outR: Float32Array,
   freq: number,
   startSec: number,
   durSec: number,
   gain: number,
-  slideFromFreq?: number
+  rng: () => number,
+  pan = 0.08,
+  slideFromFreq?: number,
+  slideSec = 0.07
 ) {
-  // Karplus-Strong woody Arabic Oud waveguide with warm body filter
   const startSample = Math.floor(startSec * SAMPLE_RATE);
   const len = Math.min(Math.floor(durSec * SAMPLE_RATE), outL.length - startSample);
   if (len <= 0 || startSample < 0) return;
 
-  const baseDelay = Math.max(4, Math.round(SAMPLE_RATE / freq));
-  const ring = new Float32Array(baseDelay + 64);
+  const minFreq = slideFromFreq ? Math.min(freq, slideFromFreq) : freq;
+  const bufSize = Math.max(32, Math.ceil(SAMPLE_RATE / minFreq) + 16);
 
-  // Warm filtered pluck excitation (no harsh high metallic ping)
-  let excitLp = 0;
-  for (let i = 0; i < ring.length; i++) {
-    const n = Math.random() * 2 - 1;
-    excitLp += 0.36 * (n - excitLp);
-    ring[i] = excitLp;
+  const ringA = new Float32Array(bufSize);
+  const ringB = new Float32Array(bufSize);
+
+  let exLp = 0;
+  const pickDelay = Math.max(2, Math.floor(bufSize * 0.22));
+  const rawEx = new Float32Array(bufSize);
+  for (let i = 0; i < bufSize; i++) {
+    const n = rng() * 2 - 1;
+    exLp += 0.32 * (n - exLp);
+    rawEx[i] = exLp;
+  }
+  for (let i = 0; i < bufSize; i++) {
+    const comb = rawEx[i] - 0.65 * rawEx[(i - pickDelay + bufSize) % bufSize];
+    ringA[i] = comb;
+    ringB[i] = comb * 0.92 + (rng() * 2 - 1) * 0.04;
   }
 
-  let readPos = 0;
-  let lastSample = 0;
-  let bodyLp = 0;
-  const slideSamples = slideFromFreq ? Math.floor(0.065 * SAMPLE_RATE) : 0;
+  let writePos = 0;
+  let prevOutA = 0;
+  let prevOutB = 0;
+
+  let res1Y1 = 0;
+  let res1Y2 = 0;
+  let res2Y1 = 0;
+  let res2Y2 = 0;
+  let postLp = 0;
+
+  const w1 = (2 * Math.PI * 235) / SAMPLE_RATE;
+  const r1 = 0.962;
+  const c1a1 = -2 * r1 * Math.cos(w1);
+  const c1a2 = r1 * r1;
+
+  const w2 = (2 * Math.PI * 540) / SAMPLE_RATE;
+  const r2 = 0.952;
+  const c2a1 = -2 * r2 * Math.cos(w2);
+  const c2a2 = r2 * r2;
+
+  const slideSamples = slideFromFreq ? Math.floor(slideSec * SAMPLE_RATE) : 0;
+  const gainL = gain * Math.cos(((pan + 1) * Math.PI) / 4);
+  const gainR = gain * Math.sin(((pan + 1) * Math.PI) / 4);
+  const fadeOutSamples = Math.min(len, Math.floor(0.035 * SAMPLE_RATE));
+
+  const fixedDelayA = Math.max(2.5, Math.min(bufSize - 2, SAMPLE_RATE / freq - 0.5));
+  const fixedDelayB = Math.max(2.5, Math.min(bufSize - 2, SAMPLE_RATE / (freq * 1.00095) - 0.5));
 
   for (let i = 0; i < len; i++) {
-    const t = i / SAMPLE_RATE;
-    const curFreq =
-      slideFromFreq && i < slideSamples
-        ? slideFromFreq + (freq - slideFromFreq) * (i / slideSamples)
-        : freq;
-    const delayLen = Math.max(4, Math.min(ring.length - 1, Math.round(SAMPLE_RATE / curFreq)));
+    let dA = fixedDelayA;
+    let dB = fixedDelayB;
 
-    const idx = readPos % delayLen;
-    const nextIdx = (readPos + 1) % delayLen;
-    const avg = 0.5 * (ring[idx] + ring[nextIdx]);
-    // Damping factor shapes warm wooden oud decay
-    const decayed = (0.992 * avg + 0.008 * lastSample) * 0.993;
-    lastSample = decayed;
-    ring[idx] = decayed;
-    readPos++;
+    if (slideFromFreq && i < slideSamples) {
+      const u = i / slideSamples;
+      const ease = 0.5 - 0.5 * Math.cos(Math.PI * u);
+      const curFreq = slideFromFreq + (freq - slideFromFreq) * ease;
+      dA = Math.max(2.5, Math.min(bufSize - 2, SAMPLE_RATE / curFreq - 0.5));
+      dB = Math.max(2.5, Math.min(bufSize - 2, SAMPLE_RATE / (curFreq * 1.00095) - 0.5));
+    }
 
-    bodyLp += 0.42 * (decayed - bodyLp);
-    const fadeOut = i > len - 240 ? (len - i) / 240 : 1;
-    const sample = bodyLp * gain * fadeOut;
+    let rPosA = writePos - dA;
+    if (rPosA < 0) rPosA += bufSize;
+    const iA0 = rPosA | 0;
+    const iA1 = iA0 + 1 >= bufSize ? 0 : iA0 + 1;
+    const fracA = rPosA - iA0;
+    const valA = ringA[iA0] * (1 - fracA) + ringA[iA1] * fracA;
 
-    outL[startSample + i] += sample * 0.92;
-    outR[startSample + i] += sample * 0.78;
+    let rPosB = writePos - dB;
+    if (rPosB < 0) rPosB += bufSize;
+    const iB0 = rPosB | 0;
+    const iB1 = iB0 + 1 >= bufSize ? 0 : iB0 + 1;
+    const fracB = rPosB - iB0;
+    const valB = ringB[iB0] * (1 - fracB) + ringB[iB1] * fracB;
+
+    const filtA = (0.72 * valA + 0.28 * prevOutA) * 0.9942;
+    const filtB = (0.70 * valB + 0.30 * prevOutB) * 0.9936;
+    prevOutA = filtA;
+    prevOutB = filtB;
+
+    ringA[writePos] = filtA;
+    ringB[writePos] = filtB;
+    writePos = writePos + 1 >= bufSize ? 0 : writePos + 1;
+
+    const dryString = (filtA + filtB) * 0.5;
+
+    const res1 = dryString - c1a1 * res1Y1 - c1a2 * res1Y2;
+    res1Y2 = res1Y1;
+    res1Y1 = res1;
+
+    const res2 = dryString - c2a1 * res2Y1 - c2a2 * res2Y2;
+    res2Y2 = res2Y1;
+    res2Y1 = res2;
+
+    const bodyOut = dryString * 0.68 + res1 * 0.045 + res2 * 0.025;
+    postLp += 0.44 * (bodyOut - postLp);
+
+    const attackEnv = i < 72 ? i / 72 : 1;
+    const releaseEnv = i > len - fadeOutSamples ? (len - i) / fadeOutSamples : 1;
+    const sample = postLp * attackEnv * releaseEnv;
+
+    outL[startSample + i] += sample * gainL;
+    outR[startSample + i] += sample * gainR;
   }
 }
 
-function addSubBassGlide(
+// Expressive Arabic Oud Risha Tremolo Phrase
+function addOudTremolo(
   outL: Float32Array,
   outR: Float32Array,
   freq: number,
   startSec: number,
-  durSec: number,
+  totalDurSec: number,
   gain: number,
-  glideFrom?: number
+  rng: () => number,
+  pan = 0.08
 ) {
-  const startSample = Math.floor(startSec * SAMPLE_RATE);
-  const len = Math.min(Math.floor(durSec * SAMPLE_RATE), outL.length - startSample);
-  if (len <= 0 || startSample < 0) return;
-
-  let phase = 0;
-  const glideLen = glideFrom ? Math.floor(0.08 * SAMPLE_RATE) : 0;
-
-  for (let i = 0; i < len; i++) {
-    const t = i / SAMPLE_RATE;
-    const f =
-      glideFrom && i < glideLen ? glideFrom + (freq - glideFrom) * (i / glideLen) : freq;
-    phase += (2 * Math.PI * f) / SAMPLE_RATE;
-
-    // Warm saturated sub + 2nd harmonic so bass cuts through phone speakers too
-    const raw = Math.sin(phase) * 0.82 + Math.sin(phase * 2) * 0.26;
-    const env = Math.min(1, t / 0.012) * Math.min(1, (durSec - t) / 0.04);
-    const s = Math.tanh(raw * 1.4) * gain * Math.max(0, env);
-    outL[startSample + i] += s;
-    outR[startSample + i] += s;
+  const strokeStep = 0.084;
+  const count = Math.max(2, Math.floor(totalDurSec / strokeStep));
+  for (let k = 0; k < count; k++) {
+    const t = startSec + k * strokeStep;
+    const arc = Math.sin(((k + 0.5) / count) * Math.PI);
+    const g = gain * (0.58 + 0.42 * arc) * (k % 2 === 0 ? 1.0 : 0.84);
+    const noteDur = k === count - 1 ? 0.52 : strokeStep * 2.1;
+    addOudNote(outL, outR, freq, t, noteDur, g, rng, pan);
   }
 }
 
-function addCinematicStrings(
+// 5. WARM QANUN ORNAMENTAL PLUCK
+function addQanunFlourish(
   outL: Float32Array,
   outR: Float32Array,
   freqs: number[],
   startSec: number,
+  stepSec: number,
+  gain: number,
+  rng: () => number
+) {
+  freqs.forEach((f, idx) => {
+    const pan = -0.35 + (idx / Math.max(1, freqs.length - 1)) * 0.7;
+    addOudNote(
+      outL,
+      outR,
+      f,
+      startSec + idx * stepSec,
+      0.52,
+      gain * (0.75 + 0.25 * (idx / freqs.length)),
+      rng,
+      pan
+    );
+  });
+}
+
+// 6. LUSH MIDDLE-EASTERN FIRQA STRING ENSEMBLE (WAVETABLE BOWED HARMONICS + VIBRATO + GLISSANDO)
+function addFirqaStrings(
+  outL: Float32Array,
+  outR: Float32Array,
+  freq: number,
+  startSec: number,
   durSec: number,
   gain: number,
-  attackSec = 0.06
+  options?: {
+    attackSec?: number;
+    releaseSec?: number;
+    glideFromFreq?: number;
+    glideSec?: number;
+    vibratoDepth?: number;
+    octaveLayer?: boolean;
+  }
 ) {
   const startSample = Math.floor(startSec * SAMPLE_RATE);
   const len = Math.min(Math.floor(durSec * SAMPLE_RATE), outL.length - startSample);
   if (len <= 0 || startSample < 0) return;
 
-  const phases = freqs.map(() => [0, 0.2, 0.45]);
+  const attackSec = options?.attackSec ?? 0.14;
+  const releaseSec = options?.releaseSec ?? 0.22;
+  const glideFrom = options?.glideFromFreq;
+  const glideSec = options?.glideSec ?? 0.09;
+  const vibDepth = options?.vibratoDepth ?? 0.0055;
+  const octaveLayer = options?.octaveLayer ?? true;
+
+  const attSamples = Math.max(1, Math.floor(attackSec * SAMPLE_RATE));
+  const relSamples = Math.max(1, Math.floor(releaseSec * SAMPLE_RATE));
+  const glideSamples = glideFrom ? Math.floor(glideSec * SAMPLE_RATE) : 0;
+  const vibStartSample = Math.floor(0.1 * SAMPLE_RATE);
+  const vibRampSamples = Math.floor(0.24 * SAMPLE_RATE);
+
+  // Wavetable phase increments in [0..TABLE_SIZE)
+  const detune0 = 1 - 0.0038;
+  const detune1 = 1 - 0.0012;
+  const detune2 = 1 + 0.0013;
+  const detune3 = 1 + 0.0039;
+
+  let ph0 = 0;
+  let ph1 = 0.27 * TABLE_SIZE;
+  let ph2 = 0.54 * TABLE_SIZE;
+  let ph3 = 0.81 * TABLE_SIZE;
+
+  let oPh0 = 0.15 * TABLE_SIZE;
+  let oPh1 = 0.42 * TABLE_SIZE;
+  let oPh2 = 0.69 * TABLE_SIZE;
+  let oPh3 = 0.93 * TABLE_SIZE;
+
+  let vibPh = 0;
+  const vibInc = (5.35 * TABLE_SIZE) / SAMPLE_RATE;
+
   let lpL = 0;
   let lpR = 0;
+  let chestL = 0;
+  let chestR = 0;
+
+  const scaleToTable = TABLE_SIZE / SAMPLE_RATE;
 
   for (let i = 0; i < len; i++) {
-    const t = i / SAMPLE_RATE;
-    let sumL = 0;
-    let sumR = 0;
-
-    for (let fIdx = 0; fIdx < freqs.length; fIdx++) {
-      const f = freqs[fIdx];
-      const p = phases[fIdx];
-      p[0] = (p[0] + (f * 0.996) / SAMPLE_RATE) % 1;
-      p[1] = (p[1] + f / SAMPLE_RATE) % 1;
-      p[2] = (p[2] + (f * 1.004) / SAMPLE_RATE) % 1;
-
-      const saw = (p[0] * 2 - 1 + (p[1] * 2 - 1) + (p[2] * 2 - 1)) * 0.33;
-      if (fIdx % 2 === 0) {
-        sumL += saw * 0.85;
-        sumR += saw * 0.55;
-      } else {
-        sumL += saw * 0.55;
-        sumR += saw * 0.85;
-      }
+    let baseFreq = freq;
+    if (glideFrom && i < glideSamples) {
+      const u = i / glideSamples;
+      const ease = 0.5 - 0.5 * Math.cos(Math.PI * u);
+      baseFreq = glideFrom + (freq - glideFrom) * ease;
     }
 
-    const norm = 1 / Math.max(1, freqs.length);
-    lpL += 0.26 * (sumL * norm - lpL);
-    lpR += 0.26 * (sumR * norm - lpR);
+    vibPh += vibInc;
+    const vibFade = i <= vibStartSample ? 0 : Math.min(1, (i - vibStartSample) / vibRampSamples);
+    const vibSin = SIN_TABLE[(vibPh | 0) & TABLE_MASK];
+    const fStep = baseFreq * (1 + vibSin * vibDepth * vibFade) * scaleToTable;
 
-    const env = Math.min(1, t / attackSec) * Math.min(1, (durSec - t) / 0.12);
-    outL[startSample + i] += lpL * gain * Math.max(0, env);
-    outR[startSample + i] += lpR * gain * Math.max(0, env);
+    ph0 += fStep * detune0;
+    ph1 += fStep * detune1;
+    ph2 += fStep * detune2;
+    ph3 += fStep * detune3;
+
+    const p0 = ph0 | 0;
+    const p1 = ph1 | 0;
+    const p2 = ph2 | 0;
+    const p3 = ph3 | 0;
+
+    let v0 =
+      SIN_TABLE[p0 & TABLE_MASK] * 0.52 +
+      SIN_TABLE[(p0 * 2) & TABLE_MASK] * 0.28 +
+      SIN_TABLE[(p0 * 3) & TABLE_MASK] * 0.15 +
+      SIN_TABLE[(p0 * 4) & TABLE_MASK] * 0.08 +
+      SIN_TABLE[(p0 * 5) & TABLE_MASK] * 0.04;
+    let v1 =
+      SIN_TABLE[p1 & TABLE_MASK] * 0.52 +
+      SIN_TABLE[(p1 * 2) & TABLE_MASK] * 0.28 +
+      SIN_TABLE[(p1 * 3) & TABLE_MASK] * 0.15 +
+      SIN_TABLE[(p1 * 4) & TABLE_MASK] * 0.08 +
+      SIN_TABLE[(p1 * 5) & TABLE_MASK] * 0.04;
+    let v2 =
+      SIN_TABLE[p2 & TABLE_MASK] * 0.52 +
+      SIN_TABLE[(p2 * 2) & TABLE_MASK] * 0.28 +
+      SIN_TABLE[(p2 * 3) & TABLE_MASK] * 0.15 +
+      SIN_TABLE[(p2 * 4) & TABLE_MASK] * 0.08 +
+      SIN_TABLE[(p2 * 5) & TABLE_MASK] * 0.04;
+    let v3 =
+      SIN_TABLE[p3 & TABLE_MASK] * 0.52 +
+      SIN_TABLE[(p3 * 2) & TABLE_MASK] * 0.28 +
+      SIN_TABLE[(p3 * 3) & TABLE_MASK] * 0.15 +
+      SIN_TABLE[(p3 * 4) & TABLE_MASK] * 0.08 +
+      SIN_TABLE[(p3 * 5) & TABLE_MASK] * 0.04;
+
+    if (octaveLayer) {
+      const fOct = fStep * 2;
+      oPh0 += fOct * detune0;
+      oPh1 += fOct * detune1;
+      oPh2 += fOct * detune2;
+      oPh3 += fOct * detune3;
+      const op0 = oPh0 | 0;
+      const op1 = oPh1 | 0;
+      const op2 = oPh2 | 0;
+      const op3 = oPh3 | 0;
+
+      v0 +=
+        (SIN_TABLE[op0 & TABLE_MASK] * 0.36 +
+          SIN_TABLE[(op0 * 2) & TABLE_MASK] * 0.16 +
+          SIN_TABLE[(op0 * 3) & TABLE_MASK] * 0.07) *
+        0.58;
+      v1 +=
+        (SIN_TABLE[op1 & TABLE_MASK] * 0.36 +
+          SIN_TABLE[(op1 * 2) & TABLE_MASK] * 0.16 +
+          SIN_TABLE[(op1 * 3) & TABLE_MASK] * 0.07) *
+        0.58;
+      v2 +=
+        (SIN_TABLE[op2 & TABLE_MASK] * 0.36 +
+          SIN_TABLE[(op2 * 2) & TABLE_MASK] * 0.16 +
+          SIN_TABLE[(op2 * 3) & TABLE_MASK] * 0.07) *
+        0.58;
+      v3 +=
+        (SIN_TABLE[op3 & TABLE_MASK] * 0.36 +
+          SIN_TABLE[(op3 * 2) & TABLE_MASK] * 0.16 +
+          SIN_TABLE[(op3 * 3) & TABLE_MASK] * 0.07) *
+        0.58;
+    }
+
+    // Stereo panning across [-0.52, -0.18, +0.18, +0.52]
+    const sumL = (v0 * 0.732 + v1 * 0.613 + v2 * 0.487 + v3 * 0.368) * 0.25;
+    const sumR = (v0 * 0.368 + v1 * 0.487 + v2 * 0.613 + v3 * 0.732) * 0.25;
+
+    lpL += 0.38 * (sumL - lpL);
+    lpR += 0.38 * (sumR - lpR);
+    chestL += 0.06 * (lpL - chestL);
+    chestR += 0.06 * (lpR - chestR);
+
+    const outSampleL = lpL * 0.86 + chestL * 0.22;
+    const outSampleR = lpR * 0.86 + chestR * 0.22;
+
+    const att = i < attSamples ? i / attSamples : 1;
+    const rem = len - i;
+    const rel = rem < relSamples ? Math.max(0, rem / relSamples) : 1;
+    const bowShape = att * att * (3 - 2 * att) * rel;
+
+    outL[startSample + i] += outSampleL * gain * bowShape;
+    outR[startSample + i] += outSampleR * gain * bowShape;
+  }
+}
+
+// 7. CLEAN WARM MODERN BASS
+function addModernBass(
+  outL: Float32Array,
+  outR: Float32Array,
+  freq: number,
+  startSec: number,
+  durSec: number,
+  gain: number,
+  glideFromFreq?: number
+) {
+  const startSample = Math.floor(startSec * SAMPLE_RATE);
+  const len = Math.min(Math.floor(durSec * SAMPLE_RATE), outL.length - startSample);
+  if (len <= 0 || startSample < 0) return;
+
+  let ph = 0;
+  let lp = 0;
+  const glideSamples = glideFromFreq ? Math.floor(0.065 * SAMPLE_RATE) : 0;
+  const attSamples = Math.floor(0.015 * SAMPLE_RATE);
+  const relSamples = Math.floor(0.06 * SAMPLE_RATE);
+  const scaleToTable = TABLE_SIZE / SAMPLE_RATE;
+
+  for (let i = 0; i < len; i++) {
+    let f = freq;
+    if (glideFromFreq && i < glideSamples) {
+      const u = i / glideSamples;
+      f = glideFromFreq + (freq - glideFromFreq) * (0.5 - 0.5 * Math.cos(Math.PI * u));
+    }
+
+    ph += f * scaleToTable;
+    const p = ph | 0;
+    const raw =
+      SIN_TABLE[p & TABLE_MASK] * 0.82 +
+      SIN_TABLE[(p * 2) & TABLE_MASK] * 0.22 +
+      SIN_TABLE[(p * 3) & TABLE_MASK] * 0.05;
+    lp += 0.08 * (raw - lp);
+
+    const att = i < attSamples ? i / attSamples : 1;
+    const rem = len - i;
+    const rel = rem < relSamples ? Math.max(0, rem / relSamples) : 1;
+    const env = att * rel * (0.72 + 0.28 * Math.exp(-i / (0.35 * SAMPLE_RATE)));
+
+    const s = lp * gain * env;
+    outL[startSample + i] += s;
+    outR[startSample + i] += s;
   }
 }
 
@@ -319,38 +580,43 @@ function encodeStereoWav(left: Float32Array, right: Float32Array, sampleRate: nu
 }
 
 export async function createArabicNikahTrackUrl(): Promise<string> {
-  const totalSamples = Math.floor(SAMPLE_RATE * DURATION_SEC);
-  const dryL = new Float32Array(totalSamples);
-  const dryR = new Float32Array(totalSamples);
-  const verbSendL = new Float32Array(totalSamples);
-  const verbSendR = new Float32Array(totalSamples);
+  const rng = createRng(11122026);
+  const loopSamples = Math.floor(LOOP_DURATION_SEC * SAMPLE_RATE);
+  const tailSamples = Math.floor(TAIL_SEC * SAMPLE_RATE);
+  const renderSamples = loopSamples + tailSamples;
 
-  // Pre-synthesize one-shot drum samples once (instant mixing!)
-  const kickD = make808KickSample(46.25, 0.45);
-  const kickEb = make808KickSample(49.0, 0.45);
-  const kickA = make808KickSample(55.0, 0.42);
-  const snareClap = makeSnareClapSample();
-  const closedHat = makeHiHatSample(false);
-  const openHat = makeHiHatSample(true);
-  const darbukaDoum = makeDarbukaSample('doum');
-  const darbukaTak = makeDarbukaSample('tak');
-  const darbukaKa = makeDarbukaSample('ka');
+  const dryL = new Float32Array(renderSamples);
+  const dryR = new Float32Array(renderSamples);
+  const verbSendL = new Float32Array(renderSamples);
+  const verbSendR = new Float32Array(renderSamples);
 
-  // Maqam Hijaz in D (D - Eb - F# - G - A - Bb - C# - D)
+  const doum = makeDarbukaSample('doum', rng);
+  const tak = makeDarbukaSample('tak', rng);
+  const ka = makeDarbukaSample('ka', rng);
+  const daf = makeDafFrameDrumSample(rng);
+  const riqAcc = makeRiqShimmerSample(true, rng);
+  const riqSoft = makeRiqShimmerSample(false, rng);
+
+  // Maqam Hijaz Kar / Hijaz in D
   const N = {
     D1: 36.71,
-    Eb1: 38.89,
     A1: 55.0,
+    Bb1: 58.27,
+    C2: 65.41,
     D2: 73.42,
     Eb2: 77.78,
+    G2: 98.0,
     A2: 110.0,
     Bb2: 116.54,
+    C3: 130.81,
+    Cs3: 138.59,
     D3: 146.83,
     Eb3: 155.56,
     Fs3: 185.0,
     G3: 196.0,
     A3: 220.0,
     Bb3: 233.08,
+    C4: 261.63,
     Cs4: 277.18,
     D4: 293.66,
     Eb4: 311.13,
@@ -358,195 +624,450 @@ export async function createArabicNikahTrackUrl(): Promise<string> {
     G4: 392.0,
     A4: 440.0,
     Bb4: 466.16,
+    Cs5: 554.37,
+    D5: 587.33,
+    Eb5: 622.25,
+    Fs5: 739.99,
   };
 
   const step16 = BEAT_SEC / 4;
 
-  // Confident, catchy 2-bar Arabic Hip-Hop Oud hook
-  const oudHookA: Array<[number, number, number, number?]> = [
-    [0, N.D3, 3.2],
-    [3, N.Fs3, 2.2, N.Eb3],
-    [6, N.G3, 2.2],
-    [8, N.A3, 3.2, N.G3],
-    [11, N.Bb3, 2.2],
-    [13, N.A3, 2.2],
-    [16, N.G3, 3.2],
-    [19, N.Fs3, 2.2],
-    [22, N.Eb3, 2.2],
-    [24, N.D3, 3.4, N.Eb3],
-    [28, N.A2, 2.2],
-    [30, N.Cs4, 2.2],
+  type OudEvent = {
+    step: number;
+    freq: number;
+    durSteps: number;
+    gain?: number;
+    slideFrom?: number;
+    tremolo?: boolean;
+  };
+
+  const playOudPhrase = (baseTime: number, events: OudEvent[], gainScale = 1, pan = 0.08) => {
+    for (const ev of events) {
+      const t = baseTime + ev.step * step16 + (rng() - 0.5) * 0.004;
+      const g = (ev.gain ?? 0.42) * gainScale;
+      if (ev.tremolo) {
+        addOudTremolo(verbSendL, verbSendR, ev.freq, t, ev.durSteps * step16, g, rng, pan);
+      } else {
+        addOudNote(
+          verbSendL,
+          verbSendR,
+          ev.freq,
+          t,
+          ev.durSteps * step16,
+          g,
+          rng,
+          pan,
+          ev.slideFrom
+        );
+      }
+    }
+  };
+
+  const introOud: OudEvent[] = [
+    { step: 0.08, freq: N.D4, durSteps: 6, gain: 0.44, tremolo: true },
+    { step: 6, freq: N.Fs4, durSteps: 3, gain: 0.40, slideFrom: N.Eb4 },
+    { step: 10, freq: N.G4, durSteps: 3, gain: 0.42 },
+    { step: 14, freq: N.A4, durSteps: 6, gain: 0.46, tremolo: true },
+    { step: 22, freq: N.Bb4, durSteps: 2.5, gain: 0.40 },
+    { step: 24, freq: N.A4, durSteps: 3, gain: 0.42, slideFrom: N.Bb4 },
+    { step: 28, freq: N.G4, durSteps: 2.5, gain: 0.38 },
+    { step: 30, freq: N.Fs4, durSteps: 3, gain: 0.40 },
+    { step: 34, freq: N.Eb4, durSteps: 3, gain: 0.40, slideFrom: N.Fs4 },
+    { step: 38, freq: N.D4, durSteps: 8, gain: 0.46, tremolo: true },
+    { step: 48, freq: N.Cs4, durSteps: 3, gain: 0.36 },
+    { step: 51, freq: N.D4, durSteps: 2.5, gain: 0.40 },
+    { step: 54, freq: N.Eb4, durSteps: 3, gain: 0.40 },
+    { step: 58, freq: N.Fs4, durSteps: 4, gain: 0.44, slideFrom: N.Eb4 },
   ];
 
-  // Higher-octave call-and-response hook for Drop B peak
-  const oudHookB: Array<[number, number, number, number?]> = [
-    [0, N.D4, 3.2],
-    [3, N.Fs4, 2.2, N.Eb4],
-    [6, N.G4, 2.2],
-    [8, N.A4, 3.2, N.G4],
-    [11, N.Bb4, 2.2],
-    [13, N.A4, 2.2],
-    [16, N.G4, 2.2],
-    [18, N.Fs4, 2.2],
-    [20, N.Eb4, 2.2],
-    [22, N.D4, 2.2],
-    [24, N.Fs4, 2.2],
-    [26, N.Eb4, 2.2],
-    [28, N.D4, 3.2],
+  const themeOudA: OudEvent[] = [
+    { step: 0, freq: N.D4, durSteps: 3.5, gain: 0.46 },
+    { step: 3, freq: N.Fs4, durSteps: 3, gain: 0.44, slideFrom: N.Eb4 },
+    { step: 6, freq: N.G4, durSteps: 2.5, gain: 0.44 },
+    { step: 8, freq: N.A4, durSteps: 6, gain: 0.48, tremolo: true },
+    { step: 14, freq: N.G4, durSteps: 2.5, gain: 0.40 },
+    { step: 16, freq: N.Bb4, durSteps: 3.5, gain: 0.46, slideFrom: N.A4 },
+    { step: 20, freq: N.A4, durSteps: 2.5, gain: 0.43 },
+    { step: 22, freq: N.G4, durSteps: 2.5, gain: 0.42 },
+    { step: 24, freq: N.Fs4, durSteps: 3, gain: 0.44 },
+    { step: 27, freq: N.Eb4, durSteps: 3, gain: 0.42, slideFrom: N.Fs4 },
+    { step: 30, freq: N.D4, durSteps: 4, gain: 0.45 },
+    { step: 32, freq: N.A3, durSteps: 3, gain: 0.41 },
+    { step: 35, freq: N.D4, durSteps: 3, gain: 0.44 },
+    { step: 38, freq: N.Eb4, durSteps: 2.5, gain: 0.42 },
+    { step: 40, freq: N.Fs4, durSteps: 4, gain: 0.46, slideFrom: N.Eb4 },
+    { step: 44, freq: N.G4, durSteps: 3.5, gain: 0.44 },
+    { step: 48, freq: N.Fs4, durSteps: 2.5, gain: 0.44 },
+    { step: 50, freq: N.Eb4, durSteps: 2.5, gain: 0.42 },
+    { step: 52, freq: N.D4, durSteps: 3.5, gain: 0.46 },
+    { step: 56, freq: N.Cs4, durSteps: 2.5, gain: 0.39 },
+    { step: 59, freq: N.D4, durSteps: 5, gain: 0.46, tremolo: true },
   ];
 
-  const bridgeOud: Array<[number, number, number, number?]> = [
-    [0, N.Bb3, 4.2],
-    [4, N.A3, 4.2, N.Bb3],
-    [8, N.G3, 4.2],
-    [12, N.Fs3, 4.2],
-    [16, N.Eb3, 4.2],
-    [20, N.Fs3, 4.2],
-    [24, N.G3, 3.2],
-    [27, N.A3, 2.2],
-    [29, N.Cs4, 3.2],
+  const themeOudB_2Bar: OudEvent[] = [
+    { step: 0, freq: N.G3, durSteps: 3, gain: 0.36 },
+    { step: 3, freq: N.Bb3, durSteps: 3, gain: 0.36 },
+    { step: 6, freq: N.D4, durSteps: 3, gain: 0.38 },
+    { step: 10, freq: N.G4, durSteps: 4, gain: 0.40 },
+    { step: 14, freq: N.Fs4, durSteps: 2.5, gain: 0.38 },
+    { step: 16, freq: N.Eb4, durSteps: 3, gain: 0.38, slideFrom: N.Fs4 },
+    { step: 20, freq: N.D4, durSteps: 3, gain: 0.38 },
+    { step: 24, freq: N.A3, durSteps: 4, gain: 0.38, tremolo: true },
+    { step: 28, freq: N.Cs4, durSteps: 2.5, gain: 0.36 },
+    { step: 30, freq: N.D4, durSteps: 3, gain: 0.39 },
   ];
 
-  for (let bar = 0; bar < TOTAL_BARS; bar++) {
-    const barStart = bar * BAR_SEC;
-    const isIntro = bar < 2;
-    const isDropA = bar >= 2 && bar < 10;
-    const isBridge = bar >= 10 && bar < 14;
-    const isDropB = bar >= 14 && bar < 22;
-    const isOutro = bar >= 22;
+  playOudPhrase(0, introOud, 0.96, 0.06);
+  playOudPhrase(4 * BAR_SEC, themeOudA, 1.0, 0.08);
+  playOudPhrase(8 * BAR_SEC, themeOudA, 1.04, 0.05);
+  playOudPhrase(12 * BAR_SEC, themeOudB_2Bar, 0.92, -0.14);
+  playOudPhrase(14 * BAR_SEC, themeOudB_2Bar, 0.94, -0.14);
+  playOudPhrase(16 * BAR_SEC, themeOudB_2Bar, 0.96, -0.14);
+  playOudPhrase(18 * BAR_SEC, themeOudB_2Bar, 0.98, -0.14);
+  playOudPhrase(20 * BAR_SEC, themeOudA, 1.06, 0.06);
 
-    // 1. 808 KICK & GLIDING SUB-BASS
-    if (isDropA || isDropB || (isBridge && bar % 2 === 0)) {
-      const kickSteps = isBridge ? [0, 10] : [0, 6, 10, 14];
-      const kickSample = bar % 4 === 2 ? kickEb : bar % 4 === 3 ? kickA : kickD;
-      kickSteps.forEach((s) => {
-        const idx = Math.floor((barStart + s * step16) * SAMPLE_RATE);
-        mixMonoIntoStereo(dryL, dryR, kickSample, idx, 0.72, 0.72);
+  addQanunFlourish(
+    verbSendL,
+    verbSendR,
+    [N.D4, N.Eb4, N.Fs4, N.G4, N.A4, N.Bb4, N.Cs5, N.D5],
+    3 * BAR_SEC + 10 * step16,
+    0.058,
+    0.20,
+    rng
+  );
+  addQanunFlourish(
+    verbSendL,
+    verbSendR,
+    [N.D5, N.Cs5, N.Bb4, N.A4, N.G4, N.Fs4, N.Eb4, N.D4],
+    11 * BAR_SEC + 10 * step16,
+    0.055,
+    0.22,
+    rng
+  );
+  addQanunFlourish(
+    verbSendL,
+    verbSendR,
+    [N.D4, N.Fs4, N.A4, N.D5, N.Eb5, N.Fs5],
+    19 * BAR_SEC + 11 * step16,
+    0.062,
+    0.23,
+    rng
+  );
+
+  // Soft atmospheric regal pedal bed throughout intro (Bars 0-3)
+  addFirqaStrings(verbSendL, verbSendR, N.D3, 0, BAR_SEC * 4.1, 0.19, {
+    attackSec: 0.45,
+    releaseSec: 0.55,
+    octaveLayer: false,
+    vibratoDepth: 0.0025,
+  });
+  addFirqaStrings(verbSendL, verbSendR, N.A3, 0, BAR_SEC * 4.1, 0.14, {
+    attackSec: 0.65,
+    releaseSec: 0.55,
+    octaveLayer: false,
+    vibratoDepth: 0.0025,
+  });
+
+  // Bars 4-11: Warm orchestral harmony chords
+  for (let b = 4; b < 12; b += 2) {
+    const t = b * BAR_SEC;
+    if (b % 4 === 0) {
+      addFirqaStrings(verbSendL, verbSendR, N.D3, t, BAR_SEC * 2.05, 0.21, {
+        attackSec: 0.24,
+        releaseSec: 0.35,
+        octaveLayer: true,
       });
-
-      if (!isBridge) {
-        const root = bar % 4 === 2 ? N.Eb2 : bar % 4 === 3 ? N.A1 * 2 : N.D2;
-        const alt = bar % 4 === 2 ? N.D2 : N.Eb2;
-        addSubBassGlide(dryL, dryR, root, barStart, step16 * 5.2, 0.34);
-        addSubBassGlide(dryL, dryR, alt, barStart + 10 * step16, step16 * 4.8, 0.32, root);
-      }
-    } else if (isOutro && bar === 22) {
-      mixMonoIntoStereo(dryL, dryR, kickD, Math.floor(barStart * SAMPLE_RATE), 0.65, 0.65);
-      mixMonoIntoStereo(dryL, dryR, kickD, Math.floor((barStart + 6 * step16) * SAMPLE_RATE), 0.58, 0.58);
-    }
-
-    // 2. HIP-HOP SNARE + CLAP
-    if (!isIntro || bar === 1) {
-      const clapSteps = isIntro ? [12] : [4, 12];
-      clapSteps.forEach((s) => {
-        const idx = Math.floor((barStart + s * step16) * SAMPLE_RATE);
-        const g = isBridge ? 0.55 : 0.72;
-        mixMonoIntoStereo(dryL, dryR, snareClap.L, idx, g, 0);
-        mixMonoIntoStereo(dryL, dryR, snareClap.R, idx, 0, g);
-        mixMonoIntoStereo(verbSendL, verbSendR, snareClap.L, idx, 0.35, 0);
-        mixMonoIntoStereo(verbSendL, verbSendR, snareClap.R, idx, 0, 0.35);
+      addFirqaStrings(verbSendL, verbSendR, N.A3, t, BAR_SEC * 2.05, 0.16, {
+        attackSec: 0.28,
+        releaseSec: 0.35,
+        octaveLayer: false,
       });
-
-      if (bar === 1 || bar === 9 || bar === 13 || bar === 23) {
-        [13, 14, 15].forEach((s, k) => {
-          const idx = Math.floor((barStart + s * step16) * SAMPLE_RATE);
-          const g = 0.32 + k * 0.12;
-          mixMonoIntoStereo(dryL, dryR, snareClap.L, idx, g, 0);
-          mixMonoIntoStereo(dryL, dryR, snareClap.R, idx, 0, g);
-        });
-      }
-    }
-
-    // 3. TRAP HI-HATS & ENERGETIC ROLLS
-    if (isDropA || isDropB || (isIntro && bar === 1) || (isOutro && bar === 22)) {
-      for (let s = 0; s < 16; s += 2) {
-        const idx = Math.floor((barStart + s * step16) * SAMPLE_RATE);
-        const isOpen = s === 14 && bar % 2 === 1;
-        const hat = isOpen ? openHat : closedHat;
-        const g = s % 4 === 0 ? 0.75 : 0.52;
-        mixMonoIntoStereo(dryL, dryR, hat, idx, g * 0.85, g * 1.1);
-      }
-      if (isDropB || bar % 2 === 1) {
-        const rollBase = barStart + 10 * step16;
-        for (let r = 0; r < 4; r++) {
-          const idx = Math.floor((rollBase + r * (step16 / 2)) * SAMPLE_RATE);
-          mixMonoIntoStereo(dryL, dryR, closedHat, idx, 0.48 + r * 0.08, 0.6 + r * 0.08);
-        }
-      }
-    }
-
-    // 4. ARABIC DARBUKA (MAQSOUM / SAAIDI FUSION)
-    const dGain = isIntro ? 0.55 : isBridge ? 0.5 : 0.7;
-    const darbukaHits: Array<[number, Float32Array, number, number]> = [
-      [0, darbukaDoum, dGain, dGain * 0.9],
-      [3, darbukaTak, dGain * 0.75, dGain * 1.05],
-      [6, darbukaDoum, dGain * 0.9, dGain * 0.8],
-      [8, darbukaTak, dGain * 0.75, dGain * 1.05],
-      [11, darbukaKa, dGain * 0.95, dGain * 0.7],
-      [12, darbukaTak, dGain * 0.75, dGain * 1.05],
-      [14, darbukaKa, dGain * 0.95, dGain * 0.7],
-    ];
-    darbukaHits.forEach(([s, smp, gL, gR]) => {
-      const idx = Math.floor((barStart + s * step16) * SAMPLE_RATE);
-      mixMonoIntoStereo(dryL, dryR, smp, idx, gL, gR);
-      mixMonoIntoStereo(verbSendL, verbSendR, smp, idx, gL * 0.25, gR * 0.25);
-    });
-
-    // 5. ARABIC OUD HIJAZ HOOK
-    if (bar % 2 === 0) {
-      const hook = isBridge ? bridgeOud : isDropB ? oudHookB : oudHookA;
-      hook.forEach(([s, freq, durSteps, slide]) => {
-        const t = barStart + s * step16;
-        addOudPluck(verbSendL, verbSendR, freq, t, durSteps * step16, isIntro ? 0.42 : 0.56, slide);
+    } else {
+      addFirqaStrings(verbSendL, verbSendR, N.Eb3, t, BAR_SEC * 1.05, 0.19, {
+        attackSec: 0.2,
+        releaseSec: 0.25,
+        octaveLayer: true,
       });
-    }
-
-    // 6. CINEMATIC LUXURY STRINGS STABS & HARMONY
-    if (bar === 0) {
-      addCinematicStrings(verbSendL, verbSendR, [N.D3, N.A3, N.D4, N.Fs4], barStart, BAR_SEC * 2, 0.28, 0.28);
-    } else if (isDropA || isDropB) {
-      if (bar % 4 === 2) {
-        addCinematicStrings(verbSendL, verbSendR, [N.D3, N.A3, N.Fs4], barStart, step16 * 6.5, 0.34, 0.03);
-      } else if (bar % 4 === 0) {
-        addCinematicStrings(verbSendL, verbSendR, [N.Eb3, N.Bb3, N.G4], barStart, step16 * 6.5, 0.32, 0.03);
-      }
-      if (isDropB && bar % 2 === 0) {
-        addCinematicStrings(verbSendL, verbSendR, [N.D4, N.Fs4, N.A4], barStart + 8 * step16, step16 * 4.5, 0.26, 0.035);
-      }
-    } else if (isBridge && bar % 2 === 0) {
-      const chord = bar === 10 ? [N.Bb2, N.D3, N.G3, N.Bb3] : [N.Eb3, N.G3, N.Bb3, N.D4];
-      addCinematicStrings(verbSendL, verbSendR, chord, barStart, BAR_SEC * 1.88, 0.32, 0.14);
+      addFirqaStrings(verbSendL, verbSendR, N.D3, t + BAR_SEC, BAR_SEC * 1.05, 0.2, {
+        attackSec: 0.18,
+        releaseSec: 0.28,
+        glideFromFreq: N.Eb3,
+        glideSec: 0.1,
+        octaveLayer: true,
+      });
     }
   }
 
-  // Tight stereo studio ambience (dual cross-feedback comb echoes) + warm mastering limiter
-  const outL = new Float32Array(totalSamples);
-  const outR = new Float32Array(totalSamples);
-  const d1 = Math.floor(0.037 * SAMPLE_RATE);
-  const d2 = Math.floor(0.061 * SAMPLE_RATE);
-  const d3 = Math.floor(0.113 * SAMPLE_RATE);
-  const fadeSamples = Math.floor(0.18 * SAMPLE_RATE);
+  // Bars 12-19: Grand Soaring Firqa String Ensemble Melody
+  const grandStringMelody: Array<[number, number, number, number?]> = [
+    [0, N.G4, 6, N.Fs4],
+    [6, N.A4, 4],
+    [10, N.Bb4, 6, N.A4],
+    [16, N.A4, 5],
+    [21, N.G4, 3],
+    [24, N.Fs4, 4, N.G4],
+    [28, N.G4, 4],
+    [32, N.A4, 8, N.G4],
+    [40, N.Bb4, 4],
+    [44, N.A4, 4],
+    [48, N.G4, 4],
+    [52, N.Fs4, 4],
+    [56, N.Eb4, 4, N.Fs4],
+    [60, N.D4, 6, N.Eb4],
+    [64, N.D4, 4],
+    [68, N.Fs4, 4, N.Eb4],
+    [72, N.G4, 4],
+    [76, N.A4, 6, N.G4],
+    [82, N.Bb4, 6],
+    [88, N.Cs5, 4, N.Bb4],
+    [92, N.D5, 6, N.Cs5],
+    [98, N.Bb4, 4],
+    [102, N.A4, 6, N.Bb4],
+    [108, N.G4, 4],
+    [112, N.Fs4, 5],
+    [117, N.Eb4, 4, N.Fs4],
+    [121, N.D4, 7, N.Eb4],
+  ];
 
-  for (let i = 0; i < totalSamples; i++) {
-    const wetL =
-      (i >= d1 ? verbSendR[i - d1] * 0.28 : 0) +
-      (i >= d2 ? verbSendL[i - d2] * 0.19 : 0) +
-      (i >= d3 ? verbSendR[i - d3] * 0.12 : 0);
-    const wetR =
-      (i >= d1 ? verbSendL[i - d1] * 0.28 : 0) +
-      (i >= d2 ? verbSendR[i - d2] * 0.19 : 0) +
-      (i >= d3 ? verbSendL[i - d3] * 0.12 : 0);
+  for (const [s, freq, dSteps, glideFrom] of grandStringMelody) {
+    addFirqaStrings(verbSendL, verbSendR, freq, 12 * BAR_SEC + s * step16, dSteps * step16 + 0.08, 0.30, {
+      attackSec: 0.11,
+      releaseSec: 0.18,
+      glideFromFreq: glideFrom,
+      glideSec: 0.085,
+      octaveLayer: true,
+      vibratoDepth: 0.006,
+    });
+  }
 
-    let env = 1;
-    if (i < 600) env = i / 600;
-    else if (i > totalSamples - fadeSamples) env = (totalSamples - i) / fadeSamples;
+  // Bars 20-23: Royal Finale Strings leading seamlessly into Bar 0
+  addFirqaStrings(verbSendL, verbSendR, N.D4, 20 * BAR_SEC, BAR_SEC * 2.05, 0.25, {
+    attackSec: 0.2,
+    releaseSec: 0.3,
+    octaveLayer: true,
+  });
+  addFirqaStrings(verbSendL, verbSendR, N.Eb4, 22 * BAR_SEC, BAR_SEC * 1.05, 0.24, {
+    attackSec: 0.16,
+    releaseSec: 0.25,
+    octaveLayer: true,
+  });
+  addFirqaStrings(verbSendL, verbSendR, N.D4, 23 * BAR_SEC, BAR_SEC * 1.25, 0.25, {
+    attackSec: 0.16,
+    releaseSec: 0.45,
+    glideFromFreq: N.Eb4,
+    glideSec: 0.09,
+    octaveLayer: true,
+  });
 
-    const mixL = (dryL[i] + verbSendL[i] * 0.85 + wetL * 0.6) * 0.82 * env;
-    const mixR = (dryR[i] + verbSendR[i] * 0.85 + wetR * 0.6) * 0.82 * env;
+  // Schedule Arabic Percussion + Modern Warm Bass Bar-by-Bar
+  for (let bar = 0; bar < TOTAL_BARS; bar++) {
+    const barStart = bar * BAR_SEC;
+    const isIntro = bar < 4;
+    const isB = bar >= 12 && bar < 20;
+    const isFinale = bar >= 20;
 
-    // Warm analog soft-clip mastering limiter
-    outL[i] = Math.tanh(mixL * 1.15);
-    outR[i] = Math.tanh(mixR * 1.15);
+    if (bar >= 2) {
+      const bassGain = isIntro ? 0.22 : isFinale ? 0.34 : 0.31;
+      let root = N.D2;
+      let fifth = N.A1;
+      if (isB) {
+        const bMod = (bar - 12) % 4;
+        if (bMod === 0) {
+          root = N.G2;
+          fifth = N.D2;
+        } else if (bMod === 1) {
+          root = N.Eb2;
+          fifth = N.Bb1;
+        } else if (bMod === 2) {
+          root = N.A2;
+          fifth = N.D2;
+        } else {
+          root = N.D2;
+          fifth = N.A1;
+        }
+      } else {
+        if (bar % 4 === 2) {
+          root = N.Eb2;
+          fifth = N.Bb1;
+        } else if (bar % 4 === 3) {
+          root = N.D2;
+          fifth = N.A1;
+        }
+      }
+
+      addModernBass(dryL, dryR, root, barStart + 0.015, step16 * 5.8, bassGain);
+      addModernBass(dryL, dryR, fifth, barStart + 6 * step16 + 0.01, step16 * 3.8, bassGain * 0.9, root);
+      addModernBass(dryL, dryR, root, barStart + 10 * step16, step16 * 5.6, bassGain * 0.95, fifth);
+    }
+
+    if (bar >= 1) {
+      const dafSteps = isIntro ? [0, 6] : [0, 6, 10];
+      const dafGain = isIntro ? 0.42 : isFinale ? 0.68 : 0.60;
+      for (const s of dafSteps) {
+        const idx = Math.floor((barStart + s * step16) * SAMPLE_RATE);
+        const vel = dafGain * (s === 0 ? 1.0 : 0.82);
+        mixMono(dryL, dryR, daf, idx, vel, vel);
+        mixMono(verbSendL, verbSendR, daf, idx, vel * 0.16, vel * 0.16);
+      }
+    }
+
+    const darbLevel = isIntro ? (bar < 2 ? 0.42 : 0.62) : isFinale ? 0.92 : 0.84;
+    const pattern: Array<[number, Float32Array, number, number]> = [
+      [0, doum, 1.0, 0.96],
+      [3, tak, 0.82, 1.04],
+      [6, doum, 0.92, 0.90],
+      [8, tak, 0.80, 1.02],
+      [11, ka, 1.02, 0.78],
+      [12, tak, 0.84, 1.02],
+      [14, ka, 0.98, 0.82],
+    ];
+
+    if (bar % 4 === 3 && bar >= 3) {
+      pattern.push([15, tak, 0.92, 0.95]);
+    }
+    if (bar === 11 || bar === 19 || bar === 23) {
+      pattern.push([13, ka, 0.88, 0.9]);
+    }
+
+    for (const [step, smp, panL, panR] of pattern) {
+      if (bar === 0 && step > 8) continue;
+      // Leave clean 8ms zero-crossing cushion on bar 0 beat 0 so loop boundary never clicks
+      const jitter = bar === 0 && step === 0 ? Math.floor(0.008 * SAMPLE_RATE) : Math.floor((rng() - 0.5) * 0.0025 * SAMPLE_RATE);
+      const idx = Math.max(0, Math.floor((barStart + step * step16) * SAMPLE_RATE) + jitter);
+      const vel = darbLevel * (0.94 + rng() * 0.12);
+      mixMono(dryL, dryR, smp, idx, vel * panL * 0.76, vel * panR * 0.76);
+      mixMono(verbSendL, verbSendR, smp, idx, vel * panL * 0.18, vel * panR * 0.18);
+    }
+
+    if (bar >= 4) {
+      const riqGain = isB || isFinale ? 0.78 : 0.64;
+      for (let s = 0; s < 16; s += 2) {
+        const isAcc = s === 4 || s === 12;
+        const smp = isAcc ? riqAcc : riqSoft;
+        const idx = Math.floor((barStart + s * step16) * SAMPLE_RATE);
+        mixMono(dryL, dryR, smp, idx, riqGain * 0.7, riqGain * 1.0);
+        mixMono(verbSendL, verbSendR, smp, idx, riqGain * 0.25, riqGain * 0.35);
+      }
+    }
+  }
+
+  // 4-Channel Hadamard FDN Concert Hall Reverb (delay lengths scaled cleanly for 32 kHz)
+  const dA = 953;  // ~29.8 ms
+  const dB = 1277; // ~39.9 ms
+  const dC = 1657; // ~51.8 ms
+  const dD = 2111; // ~66.0 ms
+  const bufA = new Float32Array(dA);
+  const bufB = new Float32Array(dB);
+  const bufC = new Float32Array(dC);
+  const bufD = new Float32Array(dD);
+  let pA = 0;
+  let pB = 0;
+  let pC = 0;
+  let pD = 0;
+  let dampA = 0;
+  let dampB = 0;
+  let dampC = 0;
+  let dampD = 0;
+
+  const wetL = new Float32Array(renderSamples);
+  const wetR = new Float32Array(renderSamples);
+  const fb = 0.76;
+  const dampAlpha = 0.42;
+
+  for (let i = 0; i < renderSamples; i++) {
+    const inL = verbSendL[i];
+    const inR = verbSendR[i];
+
+    const yA = bufA[pA];
+    const yB = bufB[pB];
+    const yC = bufC[pC];
+    const yD = bufD[pD];
+
+    const hA = 0.5 * (yA + yB + yC + yD);
+    const hB = 0.5 * (yA - yB + yC - yD);
+    const hC = 0.5 * (yA + yB - yC - yD);
+    const hD = 0.5 * (yA - yB - yC + yD);
+
+    dampA += dampAlpha * (hA - dampA);
+    dampB += dampAlpha * (hB - dampB);
+    dampC += dampAlpha * (hC - dampC);
+    dampD += dampAlpha * (hD - dampD);
+
+    bufA[pA] = inL + dampA * fb;
+    bufB[pB] = inR + dampB * fb;
+    bufC[pC] = inL * 0.7 + inR * 0.3 + dampC * fb;
+    bufD[pD] = inR * 0.7 + inL * 0.3 + dampD * fb;
+
+    pA = pA + 1 >= dA ? 0 : pA + 1;
+    pB = pB + 1 >= dB ? 0 : pB + 1;
+    pC = pC + 1 >= dC ? 0 : pC + 1;
+    pD = pD + 1 >= dD ? 0 : pD + 1;
+
+    wetL[i] = (yA + yC) * 0.34;
+    wetR[i] = (yB + yD) * 0.34;
+  }
+
+  // Circularly wrap tailSamples back onto 0..tailSamples with zero seam discontinuity
+  const loopL = new Float32Array(loopSamples);
+  const loopR = new Float32Array(loopSamples);
+
+  for (let i = 0; i < loopSamples; i++) {
+    loopL[i] = dryL[i] + verbSendL[i] * 0.78 + wetL[i] * 0.56;
+    loopR[i] = dryR[i] + verbSendR[i] * 0.78 + wetR[i] * 0.56;
+  }
+
+  for (let i = 0; i < tailSamples; i++) {
+    const srcIdx = loopSamples + i;
+    const taper = 0.5 * (1 + Math.cos((Math.PI * i) / tailSamples));
+    loopL[i] += (dryL[srcIdx] + verbSendL[srcIdx] * 0.78 + wetL[srcIdx] * 0.56) * taper;
+    loopR[i] += (dryR[srcIdx] + verbSendR[srcIdx] * 0.78 + wetR[srcIdx] * 0.56) * taper;
+  }
+
+  // DC-block + Studio Soft Limiter + Normalize to -1.5 dBFS
+  const outL = new Float32Array(loopSamples);
+  const outR = new Float32Array(loopSamples);
+  let dcInL = 0;
+  let dcOutL = 0;
+  let dcInR = 0;
+  let dcOutR = 0;
+  const dcR = 0.996;
+  let maxAbs = 0;
+
+  for (let i = 0; i < loopSamples; i++) {
+    const xL = loopL[i];
+    const xR = loopR[i];
+    dcOutL = xL - dcInL + dcR * dcOutL;
+    dcInL = xL;
+    dcOutR = xR - dcInR + dcR * dcOutR;
+    dcInR = xR;
+
+    const limL = Math.tanh(dcOutL * 0.92);
+    const limR = Math.tanh(dcOutR * 0.92);
+    outL[i] = limL;
+    outR[i] = limR;
+    const a = Math.max(Math.abs(limL), Math.abs(limR));
+    if (a > maxAbs) maxAbs = a;
+  }
+
+  if (maxAbs > 0.001) {
+    const scale = 0.84 / maxAbs;
+    for (let i = 0; i < loopSamples; i++) {
+      outL[i] *= scale;
+      outR[i] *= scale;
+    }
+  }
+
+  // Equalize exact seam endpoint (4ms circular cross-blend between sample N-1 and sample 0)
+  // AFTER DC-block & limiting so sample[loopSamples - 1] === sample[0] with zero pop/click
+  const seamWin = Math.floor(0.004 * SAMPLE_RATE); // 128 samples (~4ms)
+  const midL = 0.5 * (outL[0] + outL[loopSamples - 1]);
+  const midR = 0.5 * (outR[0] + outR[loopSamples - 1]);
+  for (let k = 0; k < seamWin; k++) {
+    const w = k / seamWin;
+    outL[k] = midL * (1 - w) + outL[k] * w;
+    outR[k] = midR * (1 - w) + outR[k] * w;
+    outL[loopSamples - 1 - k] = midL * (1 - w) + outL[loopSamples - 1 - k] * w;
+    outR[loopSamples - 1 - k] = midR * (1 - w) + outR[loopSamples - 1 - k] * w;
   }
 
   const wavBlob = encodeStereoWav(outL, outR, SAMPLE_RATE);

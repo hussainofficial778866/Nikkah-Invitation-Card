@@ -18,7 +18,7 @@ export const OpenedInvitation: React.FC<OpenedInvitationProps> = ({
   const [venueLoaded, setVenueLoaded] = useState(true);
 
   const whatsappText = encodeURIComponent(
-    'Assalamu Alaikum, we have viewed the Ulfat-e-Nikah invitation for Eman Babar & Sheikh Saud Saeed on 23 December 2026 at Lala Zaar Marriage Lawn. Thank you so much for inviting us. Wishing the couple a blessed and joyful union.'
+    'Assalamu Alaikum, we have viewed the Ulfat-e-Nikah invitation for Eman Babar & Saud Saeed at Lala Zaar Marriage Lawn. Thank you so much for inviting us. Wishing the couple a blessed and joyful union.'
   );
   const whatsappUrl = `https://wa.me/923132042174?text=${whatsappText}`;
   const mapsUrl =
@@ -126,14 +126,14 @@ export const OpenedInvitation: React.FC<OpenedInvitationProps> = ({
               <span className="h-[1px] w-8 bg-[#8DC0E0]" />
             </div>
             <h2 className="font-editorial text-balance text-4xl font-semibold tracking-wide text-[#17324A] sm:text-[44px]">
-              Sheikh Saud Saeed
+              Saud Saeed
             </h2>
           </section>
 
           {/* 4. SCRATCH ME HEART (ONLY DATE SOURCE) */}
-          <section aria-label="Scratch Me" className="mt-6 w-full">
+          <section aria-label="Save the Date Scratch Me" className="mt-6 w-full">
             <p className="text-xs font-semibold tracking-[0.24em] text-[#4C7FA6] uppercase">
-              SCRATCH ME
+              SAVE THE DATE
             </p>
 
             <div className="mt-3">
@@ -147,23 +147,31 @@ export const OpenedInvitation: React.FC<OpenedInvitationProps> = ({
             className="my-5 h-[1px] w-full max-w-xs bg-gradient-to-r from-transparent via-[#89BEE0]/75 to-transparent"
           />
 
-          {/* 5. EVENT INFORMATION (ONLY NIKAH & DINNER) */}
-          <section aria-label="Event Schedule" className="w-full max-w-sm">
-            <div className="grid grid-cols-2 divide-x divide-[#96C6E4]/65 rounded-2xl border border-[#96C6E4]/60 bg-gradient-to-br from-[#F1F8FD]/90 via-[#FCF9F4] to-[#FDF1F2]/75 py-3.5 shadow-[0_6px_18px_rgba(62,124,170,0.08)]">
-              <div className="px-3">
-                <p className="text-xs font-semibold tracking-[0.2em] text-[#427AA3] uppercase">
-                  Nikah
+          {/* 5. EVENT INFORMATION (GATHERING, NIKAH & DINNER) */}
+          <section aria-label="Event Schedule" className="w-full max-w-md">
+            <div className="grid grid-cols-3 divide-x divide-[#96C6E4]/65 rounded-2xl border border-[#96C6E4]/60 bg-gradient-to-br from-[#F1F8FD]/90 via-[#FCF9F4] to-[#FDF1F2]/75 py-3.5 shadow-[0_6px_18px_rgba(62,124,170,0.08)]">
+              <div className="px-2">
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#427AA3] uppercase">
+                  Gathering
                 </p>
-                <p className="font-editorial mt-1 text-2xl font-semibold text-[#183148] tabular-nums sm:text-[26px]">
-                  8:00 PM
+                <p className="font-editorial mt-1 text-xl font-semibold text-[#183148] tabular-nums whitespace-nowrap sm:text-2xl">
+                  7:00 PM
                 </p>
               </div>
-              <div className="px-3">
-                <p className="text-xs font-semibold tracking-[0.2em] text-[#B84554] uppercase">
+              <div className="px-2">
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#B84554] uppercase">
+                  Nikah
+                </p>
+                <p className="font-editorial mt-1 text-xl font-semibold text-[#183148] tabular-nums whitespace-nowrap sm:text-2xl">
+                  7:30 PM
+                </p>
+              </div>
+              <div className="px-2">
+                <p className="text-[11px] font-semibold tracking-[0.16em] text-[#427AA3] uppercase">
                   Dinner
                 </p>
-                <p className="font-editorial mt-1 text-2xl font-semibold text-[#183148] tabular-nums sm:text-[26px]">
-                  8:30 PM
+                <p className="font-editorial mt-1 text-xl font-semibold text-[#183148] tabular-nums whitespace-nowrap sm:text-2xl">
+                  9:00 PM
                 </p>
               </div>
             </div>
@@ -212,18 +220,34 @@ export const OpenedInvitation: React.FC<OpenedInvitationProps> = ({
             </div>
           </section>
 
-          {/* 7. FAMILY & CONTACT SECTION (NO RSVP) */}
-          <section aria-label="Family Contact" className="mt-6 w-full max-w-md">
+          {/* 7. RECEPTION & CONTACT SECTION (NO RSVP) */}
+          <section aria-label="Reception" className="mt-6 w-full max-w-md">
             <div className="border-t border-b border-[#92C2E1]/55 py-5">
-              <p className="text-xs font-medium tracking-[0.18em] text-[#4E7B9E] uppercase">
-                With Warm Regards
+              <p className="text-xs font-semibold tracking-[0.22em] text-[#4E7B9E] uppercase">
+                RECEPTION
               </p>
-              <p className="font-editorial mt-1 text-2xl font-semibold text-[#183148] sm:text-[26px]">
-                Mr. &amp; Mrs. Babar Aziz
-              </p>
-              <p className="mt-1 text-sm font-medium tracking-wider text-[#B64452] tabular-nums">
-                0313-2042174
-              </p>
+
+              <div className="mt-3 space-y-2.5">
+                <div>
+                  <p className="font-editorial text-2xl font-semibold text-[#183148] sm:text-[26px]">
+                    Mr. &amp; Mrs. Babar Aziz
+                  </p>
+                  <a
+                    href="tel:03132042174"
+                    className="mt-0.5 inline-block text-sm font-medium tracking-wider text-[#B64452] tabular-nums underline-offset-4 hover:underline"
+                  >
+                    0313-2042174
+                  </a>
+                </div>
+
+                <p className="font-editorial text-xl font-medium text-[#183148] sm:text-[23px]">
+                  Mr. &amp; Mrs. Atta-Ur-Rehman
+                </p>
+
+                <p className="font-editorial text-xl font-medium text-[#183148] sm:text-[23px]">
+                  Mr. &amp; Mrs. Yasir Aziz
+                </p>
+              </div>
 
               <div className="mt-4 flex flex-col items-center justify-center gap-3 sm:flex-row">
                 <a
