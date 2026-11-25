@@ -8,7 +8,8 @@ import { Volume2, VolumeX } from 'lucide-react';
 import { FrontInvitationCard } from './components/FrontInvitationCard';
 import { OpenedInvitation } from './components/OpenedInvitation';
 import { PetalOverlay } from './components/PetalOverlay';
-import { createArabicNikahTrackUrl } from './utils/arabicMusic';
+
+const ARABIC_MUSIC_SRC = './assets/aistudio/Arbiiii__converted_by_happyscribe.com__be22c4ed.mp3';
 
 type CardStage = 'closed' | 'opening' | 'opened';
 
@@ -20,7 +21,6 @@ export default function App() {
   const [hasAudioStarted, setHasAudioStarted] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const trackUrlPromiseRef = useRef<Promise<string> | null>(null);
   const timersRef = useRef<number[]>([]);
 
   const clearTimers = useCallback(() => {
@@ -28,12 +28,9 @@ export default function App() {
     timersRef.current = [];
   }, []);
 
-  // Prepare the 60-second Arabic Nikah track on mount
+  // Prepare the uploaded Arabic wedding background track on mount
   useEffect(() => {
-    let active = true;
-    let createdUrl: string | null = null;
-
-    const audio = new Audio();
+    const audio = new Audio(ARABIC_MUSIC_SRC);
     audio.preload = 'auto';
     audio.loop = true;
     audioRef.current = audio;
@@ -48,24 +45,11 @@ export default function App() {
 
     audio.addEventListener('ended', handleEnded);
 
-    const promise = createArabicNikahTrackUrl().then((url) => {
-      createdUrl = url;
-      if (active && audioRef.current) {
-        audioRef.current.src = url;
-      }
-      return url;
-    });
-
-    trackUrlPromiseRef.current = promise;
-
     return () => {
-      active = false;
       clearTimers();
       audio.removeEventListener('ended', handleEnded);
       audio.pause();
-      if (createdUrl) {
-        URL.revokeObjectURL(createdUrl);
-      }
+      audioRef.current = null;
     };
   }, [clearTimers]);
 
@@ -79,17 +63,6 @@ export default function App() {
   const startMusicFromBeginning = useCallback(async () => {
     const audio = audioRef.current;
     if (!audio) return;
-
-    if (!audio.src && trackUrlPromiseRef.current) {
-      try {
-        const url = await trackUrlPromiseRef.current;
-        if (!audio.src) {
-          audio.src = url;
-        }
-      } catch {
-        return;
-      }
-    }
 
     audio.currentTime = 0;
     audio.muted = isMuted;
