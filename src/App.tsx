@@ -9,7 +9,7 @@ import { FrontInvitationCard } from './components/FrontInvitationCard';
 import { OpenedInvitation } from './components/OpenedInvitation';
 import { PetalOverlay } from './components/PetalOverlay';
 
-const ARABIC_MUSIC_SRC = './assets/aistudio/Arbiiii__converted_by_happyscribe.com__be22c4ed.mp3';
+const ARABIC_MUSIC_SRC = './assets/aistudio/Nikkah_Music__converted_by_happyscribe.com__c9b41f14.mp3';
 
 type CardStage = 'closed' | 'opening' | 'opened';
 
